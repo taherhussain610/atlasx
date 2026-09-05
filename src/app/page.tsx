@@ -192,14 +192,11 @@ export default function OverviewPage() {
                   </div>
                   <div className="activity-row__meta">
                     <ChainMark chainId={item.chainId} size="small" />
-                    <time>
-                      {new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(
-                        -Math.max(
-                          0,
-                          Math.round((Date.now() - item.timestamp) / 60_000),
-                        ),
-                        "minute",
-                      )}
+                    <time dateTime={new Date(item.timestamp).toISOString()}>
+                      {new Intl.DateTimeFormat("en", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      }).format(item.timestamp)}
                     </time>
                   </div>
                 </div>

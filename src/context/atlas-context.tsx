@@ -162,6 +162,10 @@ function validateState(value: unknown): value is SandboxState {
   );
 }
 
+function withActivity(activity: Activity[], item: Activity): Activity[] {
+  return [item, ...activity].slice(0, 50);
+}
+
 const AtlasContext = createContext<AtlasContextValue | null>(null);
 
 export function AtlasProvider({ children }: { children: ReactNode }) {
@@ -185,21 +189,25 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let restoredState: SandboxState | null = null;
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed: unknown = JSON.parse(stored);
-        if (validateState(parsed)) setState(parsed);
+        if (validateState(parsed)) restoredState = parsed;
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     }
-    setDetectedWallets({
-      evm: Boolean(window.ethereum),
-      solana: Boolean(window.solana?.isPhantom),
-      tron: Boolean(window.tronLink),
+    queueMicrotask(() => {
+      if (restoredState) setState(restoredState);
+      setDetectedWallets({
+        evm: Boolean(window.ethereum),
+        solana: Boolean(window.solana?.isPhantom),
+        tron: Boolean(window.tronLink),
+      });
+      setHydrated(true);
     });
-    setHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -349,8 +357,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             [to]: (current.balances[chainId][to] ?? 0) + amountOut,
           },
         },
-        activity: [
-          {
+        activity: withActivity(current.activity, {
             id: makeId("swap"),
             type: "swap",
             title: `Swapped ${from} for ${to}`,
@@ -358,9 +365,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             chainId,
             valueUsd: inputValue,
             timestamp: Date.now(),
-          },
-          ...current.activity,
-        ].slice(0, 50),
+        }),
       }));
       notify("Swap completed in sandbox mode.");
     },
@@ -403,8 +408,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
           },
         },
         liquidityPositions: [position, ...current.liquidityPositions],
-        activity: [
-          {
+        activity: withActivity(current.activity, {
             id: makeId("liquidity"),
             type: "liquidity",
             title: `Added ${tokenA}/${tokenB} liquidity`,
@@ -412,9 +416,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             chainId,
             valueUsd,
             timestamp: Date.now(),
-          },
-          ...current.activity,
-        ].slice(0, 50),
+        }),
       }));
       notify("Liquidity position created.");
     },
@@ -443,8 +445,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
         liquidityPositions: current.liquidityPositions.filter(
           (item) => item.id !== positionId,
         ),
-        activity: [
-          {
+        activity: withActivity(current.activity, {
             id: makeId("liquidity"),
             type: "liquidity",
             title: `Removed ${position.tokenA}/${position.tokenB} liquidity`,
@@ -452,9 +453,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             chainId: position.chainId,
             valueUsd: position.valueUsd,
             timestamp: Date.now(),
-          },
-          ...current.activity,
-        ].slice(0, 50),
+        }),
       }));
       notify("Liquidity withdrawn to your sandbox wallet.");
     },
@@ -487,8 +486,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
           },
         },
         stakePositions: [position, ...current.stakePositions],
-        activity: [
-          {
+        activity: withActivity(current.activity, {
             id: makeId("stake"),
             type: "stake",
             title: `Staked ${token}`,
@@ -496,9 +494,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             chainId,
             valueUsd: amount * getToken(chainId, token).price,
             timestamp: Date.now(),
-          },
-          ...current.activity,
-        ].slice(0, 50),
+        }),
       }));
       notify("Stake activated in sandbox mode.");
     },
@@ -530,8 +526,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             ? { ...item, claimedRewards: item.claimedRewards + claimable }
             : item,
         ),
-        activity: [
-          {
+        activity: withActivity(current.activity, {
             id: makeId("reward"),
             type: "reward",
             title: `Claimed ${position.token} rewards`,
@@ -539,9 +534,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             chainId: position.chainId,
             valueUsd: claimable * getToken(position.chainId, position.token).price,
             timestamp: now,
-          },
-          ...current.activity,
-        ].slice(0, 50),
+        }),
       }));
       notify("Rewards claimed.");
     },
@@ -565,8 +558,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
           },
         },
         stakePositions: current.stakePositions.filter((item) => item.id !== positionId),
-        activity: [
-          {
+        activity: withActivity(current.activity, {
             id: makeId("stake"),
             type: "stake",
             title: `Unstaked ${position.token}`,
@@ -574,9 +566,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
             chainId: position.chainId,
             valueUsd: position.amount * getToken(position.chainId, position.token).price,
             timestamp: Date.now(),
-          },
-          ...current.activity,
-        ].slice(0, 50),
+        }),
       }));
       notify("Principal returned to your sandbox balance.");
     },

@@ -34,10 +34,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [networkOpen, setNetworkOpen] = useState(false);
   const chain = getChain(chainId);
 
-  useEffect(() => {
-    setNetworkOpen(false);
-  }, [pathname]);
-
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -54,6 +50,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 className={`nav-link ${active ? "nav-link--active" : ""}`}
                 key={item.href}
+                onClick={() => setNetworkOpen(false)}
               >
                 <Icon name={item.icon} />
                 <span>{item.label}</span>
@@ -165,6 +162,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               href={item.href}
               className={active ? "is-active" : ""}
               key={item.href}
+              onClick={() => setNetworkOpen(false)}
             >
               <Icon name={item.icon} size={19} />
               <span>{item.label}</span>
