@@ -74,7 +74,6 @@ export default function MarketsPage() {
   const [selectedId, setSelectedId] = useState("bnb");
   const [range, setRange] = useState<ChartRange>("1D");
   const [watchlist, setWatchlist] = useState<string[]>(["bnb", "solana", "atlasx"]);
-  const [sessionStartedAt] = useState(() => Date.now());
 
   const loadMarkets = async (signal?: AbortSignal) => {
     setRefreshing(true);
@@ -487,11 +486,13 @@ export default function MarketsPage() {
               return (
                 <div key={index}>
                   <time>
-                    {new Intl.DateTimeFormat("en", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    }).format((updatedAt ?? sessionStartedAt) - index * 17_000)}
+                    {updatedAt
+                      ? new Intl.DateTimeFormat("en", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        }).format(updatedAt - index * 17_000)
+                      : "—"}
                   </time>
                   <strong className={isBuy ? "value-good" : "value-warning"}>
                     {formatBookPrice(price)}
