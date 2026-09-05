@@ -3,6 +3,7 @@
 import { Icon } from "@/components/icons";
 import { NetworkTabs } from "@/components/network-tabs";
 import { TokenMark } from "@/components/token-mark";
+import { AdvancedOrderDesk } from "@/components/advanced-order-desk";
 import { useAtlas } from "@/context/atlas-context";
 import {
   ChainId,
@@ -16,7 +17,12 @@ import {
 import { FormEvent, useMemo, useState } from "react";
 
 export default function SwapPage() {
-  const { chainId } = useAtlas();
+  const { chainId, orders } = useAtlas();
+  const [mode, setMode] = useState<"market" | "limit" | "dca">("market");
+  const activeOrders = orders.filter(
+    (order) =>
+      order.chainId === chainId && (order.status === "open" || order.status === "active"),
+  ).length;
 
   return (
     <div className="flow-page">
@@ -35,7 +41,31 @@ export default function SwapPage() {
         </div>
       </header>
       <NetworkTabs />
-      <SwapForm key={chainId} chainId={chainId} />
+      <div className="trade-mode-bar">
+        <div role="tablist" aria-label="Trading tool">
+          {(["market", "limit", "dca"] as const).map((item) => (
+            <button
+              className={mode === item ? "is-active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={mode === item}
+              key={item}
+              onClick={() => setMode(item)}
+            >
+              {item === "market" ? "Market swap" : item === "limit" ? "Limit order" : "DCA plan"}
+            </button>
+          ))}
+        </div>
+        <span>
+          <Icon name="activity" size={14} />
+          {activeOrders} active {activeOrders === 1 ? "order" : "orders"}
+        </span>
+      </div>
+      {mode === "market" ? (
+        <SwapForm key={chainId} chainId={chainId} />
+      ) : (
+        <AdvancedOrderDesk key={`${chainId}-${mode}`} chainId={chainId} kind={mode} />
+      )}
     </div>
   );
 }

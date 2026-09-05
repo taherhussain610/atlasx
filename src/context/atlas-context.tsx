@@ -57,7 +57,7 @@ export type WalletSession = {
 
 export type Activity = {
   id: string;
-  type: "swap" | "liquidity" | "stake" | "reward";
+  type: "swap" | "liquidity" | "stake" | "reward" | "order";
   title: string;
   detail: string;
   chainId: ChainId;
@@ -88,11 +88,37 @@ export type StakePosition = {
   claimedRewards: number;
 };
 
+export type SandboxOrder = {
+  id: string;
+  chainId: ChainId;
+  kind: "limit" | "dca";
+  fromToken: string;
+  toToken: string;
+  amount: number;
+  targetRate: number | null;
+  intervalDays: number | null;
+  totalExecutions: number;
+  completedExecutions: number;
+  status: "open" | "active" | "filled" | "cancelled";
+  createdAt: number;
+};
+
+export type CreateOrderInput = {
+  kind: SandboxOrder["kind"];
+  fromToken: string;
+  toToken: string;
+  amount: number;
+  targetRate?: number;
+  intervalDays?: number;
+  totalExecutions?: number;
+};
+
 type SandboxState = {
   balances: Record<ChainId, Record<string, number>>;
   activity: Activity[];
   liquidityPositions: LiquidityPosition[];
   stakePositions: StakePosition[];
+  orders: SandboxOrder[];
 };
 
 type DetectedWallets = {
@@ -113,6 +139,9 @@ type AtlasContextValue = SandboxState & {
   connectWallet: (kind: WalletKind) => Promise<void>;
   disconnectWallet: () => void;
   executeSwap: (from: string, to: string, amountIn: number, amountOut: number) => void;
+  createOrder: (input: CreateOrderInput) => void;
+  executeOrder: (orderId: string) => void;
+  cancelOrder: (orderId: string) => void;
   addLiquidity: (tokenA: string, tokenB: string, amountA: number, amountB: number) => void;
   withdrawLiquidity: (positionId: string) => void;
   createStake: (token: string, amount: number, apr: number, lockDays: number) => void;
@@ -134,6 +163,7 @@ function freshState(): SandboxState {
     activity: [],
     liquidityPositions: [],
     stakePositions: [],
+    orders: [],
   };
 }
 
@@ -151,15 +181,24 @@ function sandboxAddress(chainId: ChainId): string {
   return "0xA71a5A5D5F0cB2e9eAE6A48F4a76f0cF9E2aB310";
 }
 
-function validateState(value: unknown): value is SandboxState {
-  if (!value || typeof value !== "object") return false;
+function restoreState(value: unknown): SandboxState | null {
+  if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<SandboxState>;
-  return (
-    !!candidate.balances &&
-    Array.isArray(candidate.activity) &&
-    Array.isArray(candidate.liquidityPositions) &&
-    Array.isArray(candidate.stakePositions)
-  );
+  if (
+    !candidate.balances ||
+    !Array.isArray(candidate.activity) ||
+    !Array.isArray(candidate.liquidityPositions) ||
+    !Array.isArray(candidate.stakePositions)
+  ) {
+    return null;
+  }
+  return {
+    balances: candidate.balances,
+    activity: candidate.activity,
+    liquidityPositions: candidate.liquidityPositions,
+    stakePositions: candidate.stakePositions,
+    orders: Array.isArray(candidate.orders) ? candidate.orders : [],
+  };
 }
 
 function withActivity(activity: Activity[], item: Activity): Activity[] {
@@ -194,7 +233,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed: unknown = JSON.parse(stored);
-        if (validateState(parsed)) restoredState = parsed;
+        restoredState = restoreState(parsed);
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -370,6 +409,160 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       notify("Swap completed in sandbox mode.");
     },
     [chainId, notify, requireReadyWallet, state.balances],
+  );
+
+  const createOrder = useCallback(
+    (input: CreateOrderInput) => {
+      requireReadyWallet();
+      if (input.fromToken === input.toToken) {
+        throw new Error("Choose two different assets.");
+      }
+      if (!Number.isFinite(input.amount) || input.amount <= 0) {
+        throw new Error("Enter a valid order amount.");
+      }
+      const available = state.balances[chainId][input.fromToken] ?? 0;
+      if (input.amount > available) {
+        throw new Error(`Insufficient ${input.fromToken} balance.`);
+      }
+
+      const totalExecutions =
+        input.kind === "dca" ? Math.max(Math.trunc(input.totalExecutions ?? 0), 2) : 1;
+      const intervalDays =
+        input.kind === "dca" ? Math.max(Math.trunc(input.intervalDays ?? 0), 1) : null;
+      const targetRate = input.kind === "limit" ? input.targetRate ?? 0 : null;
+      if (
+        input.kind === "limit" &&
+        (targetRate === null || !Number.isFinite(targetRate) || targetRate <= 0)
+      ) {
+        throw new Error("Enter a valid limit rate.");
+      }
+      if (
+        input.kind === "dca" &&
+        (intervalDays === null ||
+          totalExecutions > 24 ||
+          !Number.isFinite(intervalDays) ||
+          intervalDays > 365)
+      ) {
+        throw new Error("Choose 2–24 executions and a 1–365 day interval.");
+      }
+
+      const order: SandboxOrder = {
+        id: makeId("order"),
+        chainId,
+        kind: input.kind,
+        fromToken: input.fromToken,
+        toToken: input.toToken,
+        amount: input.amount,
+        targetRate,
+        intervalDays,
+        totalExecutions,
+        completedExecutions: 0,
+        status: input.kind === "limit" ? "open" : "active",
+        createdAt: Date.now(),
+      };
+      const valueUsd = input.amount * getToken(chainId, input.fromToken).price;
+
+      setState((current) => ({
+        ...current,
+        orders: [order, ...current.orders],
+        activity: withActivity(current.activity, {
+          id: makeId("order"),
+          type: "order",
+          title: `Created ${input.kind.toUpperCase()} order`,
+          detail: `${input.amount.toLocaleString()} ${input.fromToken} → ${input.toToken}`,
+          chainId,
+          valueUsd,
+          timestamp: Date.now(),
+        }),
+      }));
+      notify(input.kind === "limit" ? "Limit order created." : "DCA plan activated.");
+    },
+    [chainId, notify, requireReadyWallet, state.balances],
+  );
+
+  const executeOrder = useCallback(
+    (orderId: string) => {
+      const order = state.orders.find((item) => item.id === orderId);
+      if (!order || !["open", "active"].includes(order.status)) {
+        throw new Error("This order is no longer active.");
+      }
+      if (order.chainId !== chainId) {
+        throw new Error(`Switch to ${getChain(order.chainId).name} to execute this order.`);
+      }
+      requireReadyWallet();
+      const available = state.balances[order.chainId][order.fromToken] ?? 0;
+      if (order.amount > available) {
+        throw new Error(`Insufficient ${order.fromToken} balance.`);
+      }
+
+      const marketRate =
+        getToken(order.chainId, order.fromToken).price /
+        getToken(order.chainId, order.toToken).price;
+      const executionRate = order.targetRate ?? marketRate;
+      const amountOut = order.amount * executionRate * 0.997;
+      const completedExecutions = order.completedExecutions + 1;
+      const filled = completedExecutions >= order.totalExecutions;
+
+      setState((current) => ({
+        ...current,
+        balances: {
+          ...current.balances,
+          [order.chainId]: {
+            ...current.balances[order.chainId],
+            [order.fromToken]:
+              current.balances[order.chainId][order.fromToken] - order.amount,
+            [order.toToken]:
+              (current.balances[order.chainId][order.toToken] ?? 0) + amountOut,
+          },
+        },
+        orders: current.orders.map((item) =>
+          item.id === orderId
+            ? {
+                ...item,
+                completedExecutions,
+                status: filled ? "filled" : item.status,
+              }
+            : item,
+        ),
+        activity: withActivity(current.activity, {
+          id: makeId("order"),
+          type: "order",
+          title: order.kind === "limit" ? "Limit order filled" : "DCA tranche executed",
+          detail: `${order.amount.toLocaleString()} ${order.fromToken} → ${amountOut.toLocaleString()} ${order.toToken}`,
+          chainId: order.chainId,
+          valueUsd: order.amount * getToken(order.chainId, order.fromToken).price,
+          timestamp: Date.now(),
+        }),
+      }));
+      notify(filled ? "Order completed." : "DCA tranche executed.");
+    },
+    [chainId, notify, requireReadyWallet, state.balances, state.orders],
+  );
+
+  const cancelOrder = useCallback(
+    (orderId: string) => {
+      const order = state.orders.find((item) => item.id === orderId);
+      if (!order || !["open", "active"].includes(order.status)) {
+        throw new Error("This order is no longer active.");
+      }
+      setState((current) => ({
+        ...current,
+        orders: current.orders.map((item) =>
+          item.id === orderId ? { ...item, status: "cancelled" } : item,
+        ),
+        activity: withActivity(current.activity, {
+          id: makeId("order"),
+          type: "order",
+          title: "Order cancelled",
+          detail: `${order.fromToken}/${order.toToken} ${order.kind.toUpperCase()} order`,
+          chainId: order.chainId,
+          valueUsd: order.amount * getToken(order.chainId, order.fromToken).price,
+          timestamp: Date.now(),
+        }),
+      }));
+      notify("Order cancelled.");
+    },
+    [notify, state.orders],
   );
 
   const addLiquidity = useCallback(
@@ -602,6 +795,9 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       connectWallet,
       disconnectWallet,
       executeSwap,
+      createOrder,
+      executeOrder,
+      cancelOrder,
       addLiquidity,
       withdrawLiquidity,
       createStake,
@@ -621,6 +817,9 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       connectWallet,
       disconnectWallet,
       executeSwap,
+      createOrder,
+      executeOrder,
+      cancelOrder,
       addLiquidity,
       withdrawLiquidity,
       createStake,

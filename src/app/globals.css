@@ -16,8 +16,8 @@
   --cyan: #6ee7f2;
   --amber: #f2bf6e;
   --danger: #ff7d89;
-  --sidebar-width: 232px;
-  --topbar-height: 76px;
+  --sidebar-width: 214px;
+  --topbar-height: 68px;
 }
 
 * {
@@ -86,7 +86,7 @@ code {
   display: flex;
   width: var(--sidebar-width);
   flex-direction: column;
-  padding: 26px 18px 20px;
+  padding: 22px 14px 16px;
   border-right: 1px solid var(--border);
   background: rgba(10, 11, 16, 0.92);
   backdrop-filter: blur(24px);
@@ -94,7 +94,7 @@ code {
 
 .sidebar__brand {
   display: block;
-  padding: 0 10px 34px;
+  padding: 0 9px 27px;
 }
 
 .brand {
@@ -152,7 +152,7 @@ code {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .nav-link {
@@ -160,13 +160,13 @@ code {
   display: flex;
   align-items: center;
   gap: 13px;
-  min-height: 46px;
-  padding: 0 13px;
+  min-height: 40px;
+  padding: 0 11px;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 11px;
+  border-radius: 10px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 550;
   transition:
     color 160ms ease,
@@ -258,6 +258,14 @@ code {
   transition: color 160ms ease;
 }
 
+.text-button[href] {
+  border-radius: 8px;
+}
+
+.text-button[href]:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
 .text-button:hover {
   color: var(--muted-strong);
 }
@@ -325,12 +333,12 @@ code {
 .network-button,
 .wallet-button {
   display: flex;
-  height: 43px;
+  height: 38px;
   align-items: center;
   gap: 9px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.035);
   cursor: pointer;
   transition:
@@ -570,13 +578,13 @@ code {
 
 .button {
   display: inline-flex;
-  min-height: 43px;
+  min-height: 39px;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 0 18px;
+  padding: 0 15px;
   border: 1px solid transparent;
-  border-radius: 11px;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 11px;
   font-weight: 650;
@@ -1487,6 +1495,58 @@ code {
 .network-tabs small {
   color: var(--muted);
   font-size: 8px;
+}
+
+.trade-mode-bar {
+  display: flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.trade-mode-bar > div {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.trade-mode-bar button {
+  min-height: 33px;
+  padding: 0 13px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 620;
+}
+
+.trade-mode-bar button:hover {
+  color: var(--muted-strong);
+}
+
+.trade-mode-bar button.is-active {
+  color: var(--text);
+  border: 1px solid rgba(139, 118, 255, 0.17);
+  background: var(--violet-soft);
+}
+
+.trade-mode-bar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.trade-mode-bar > span svg {
+  color: var(--cyan);
 }
 
 .trade-layout,
@@ -2836,6 +2896,26 @@ code {
 }
 
 @media (max-width: 620px) {
+  .trade-mode-bar {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 5px;
+  }
+
+  .trade-mode-bar > div {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .trade-mode-bar button {
+    padding-inline: 7px;
+    font-size: 8px;
+  }
+
+  .trade-mode-bar > span {
+    display: none;
+  }
+
   .page-header {
     min-height: auto;
     align-items: flex-start;
@@ -2991,7 +3071,7 @@ code {
 
 @media (max-width: 1080px) {
   :root {
-    --sidebar-width: 204px;
+    --sidebar-width: 190px;
   }
 
   .metric-grid {
@@ -3163,8 +3243,8 @@ code {
     bottom: 10px;
     left: 10px;
     display: grid;
-    height: 64px;
-    grid-template-columns: repeat(5, 1fr);
+    height: 60px;
+    grid-template-columns: repeat(6, 1fr);
     padding: 6px;
     border: 1px solid var(--border-strong);
     border-radius: 18px;

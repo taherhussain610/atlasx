@@ -1,0 +1,403 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(390px, 0.78fr) minmax(560px, 1.22fr);
+  align-items: start;
+  gap: 13px;
+}
+
+.ticket,
+.ordersPanel {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.ticket {
+  padding: 18px;
+}
+
+.ticketHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 17px;
+}
+
+.ticketHeading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ticketHeading h2 {
+  font-size: 17px;
+  font-weight: 640;
+  letter-spacing: -0.4px;
+}
+
+.orderBadge {
+  padding: 5px 8px;
+  border: 1px solid rgba(139, 118, 255, 0.17);
+  border-radius: 7px;
+  color: var(--violet-light);
+  background: var(--violet-soft);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.pairGrid {
+  display: grid;
+  grid-template-columns: 1fr 30px 1fr;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+
+.tokenPicker,
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.024);
+}
+
+.tokenPicker > span,
+.field > span > strong {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 560;
+}
+
+.tokenPicker > div {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.tokenPicker > div > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tokenPicker strong {
+  font-size: 10px;
+}
+
+.tokenPicker small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tokenPicker select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tokenPicker svg {
+  color: var(--muted);
+}
+
+.switchPair {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--panel-strong);
+  cursor: pointer;
+}
+
+.switchPair:hover {
+  color: var(--violet-light);
+  border-color: rgba(139, 118, 255, 0.28);
+}
+
+.field {
+  margin-bottom: 9px;
+}
+
+.field > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field > span small,
+.field > small {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.field > div {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 7px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 570;
+}
+
+.field select {
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.field input[type="number"] {
+  appearance: textfield;
+}
+
+.field > div > button {
+  padding: 5px 7px;
+  border-radius: 6px;
+  color: var(--violet-light);
+  background: var(--violet-soft);
+  cursor: pointer;
+  font-size: 7px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.field > div > strong {
+  color: var(--muted-strong);
+  font-size: 9px;
+}
+
+.scheduleGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.preview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(139, 118, 255, 0.035);
+}
+
+.preview > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 7px;
+}
+
+.preview > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.preview span {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.preview strong {
+  overflow: hidden;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disclaimer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.disclaimer svg {
+  color: var(--green);
+}
+
+.ordersPanel {
+  overflow: hidden;
+}
+
+.orderList {
+  padding: 0 14px 12px;
+  overflow-x: auto;
+}
+
+.orderHead,
+.orderRow {
+  display: grid;
+  min-width: 720px;
+  grid-template-columns: 1.2fr 0.9fr 0.9fr 0.55fr 1.1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.orderHead {
+  height: 34px;
+  color: #696e7c;
+  font-size: 7px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.orderRow {
+  min-height: 68px;
+  border-top: 1px solid var(--border);
+}
+
+.orderRow > div:not(.orderPair, .orderActions) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orderRow strong {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orderRow small {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.orderPair {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.orderPair > span:first-child {
+  display: flex;
+}
+
+.orderPair > span:first-child > span + span {
+  margin-left: -8px;
+}
+
+.orderPair > span:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.status {
+  justify-self: start;
+  padding: 5px 7px;
+  border-radius: 999px;
+  font-size: 7px;
+  font-weight: 680;
+  text-transform: capitalize;
+}
+
+.statusOpen,
+.statusActive {
+  color: var(--cyan);
+  background: rgba(110, 231, 242, 0.08);
+}
+
+.statusFilled {
+  color: var(--green);
+  background: rgba(128, 236, 174, 0.08);
+}
+
+.statusCancelled {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.orderActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.orderActions button {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(139, 118, 255, 0.18);
+  border-radius: 7px;
+  color: var(--violet-light);
+  background: var(--violet-soft);
+  cursor: pointer;
+  font-size: 7px;
+  font-weight: 650;
+}
+
+.orderActions .cancel {
+  color: var(--muted);
+  border-color: var(--border);
+  background: transparent;
+}
+
+.orderActions > span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+@media (max-width: 1120px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .ticket {
+    padding: 14px;
+  }
+
+  .pairGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .switchPair {
+    margin: -2px auto;
+    transform: rotate(90deg);
+  }
+
+  .scheduleGrid,
+  .preview {
+    grid-template-columns: 1fr;
+  }
+
+  .preview > div + div {
+    padding-top: 7px;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}

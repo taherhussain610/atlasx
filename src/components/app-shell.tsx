@@ -14,6 +14,7 @@ import { ReactNode, useEffect, useState } from "react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: "overview" },
+  { href: "/markets", label: "Markets", icon: "markets" },
   { href: "/swap", label: "Swap", icon: "swap" },
   { href: "/liquidity", label: "Liquidity", icon: "liquidity" },
   { href: "/staking", label: "Staking", icon: "stake" },
@@ -68,6 +69,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span>No real funds at risk</span>
             </div>
           </div>
+          <a className="text-button" href="mailto:info@atlasx.online">
+            <Icon name="mail" size={15} />
+            Email support
+          </a>
           <button className="text-button" type="button" onClick={resetSandbox}>
             <Icon name="reset" size={16} />
             Reset portfolio

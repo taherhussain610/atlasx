@@ -2,6 +2,7 @@ import { SVGProps } from "react";
 
 type IconName =
   | "overview"
+  | "markets"
   | "swap"
   | "liquidity"
   | "stake"
@@ -14,7 +15,9 @@ type IconName =
   | "external"
   | "close"
   | "sparkles"
-  | "reset";
+  | "reset"
+  | "search"
+  | "mail";
 
 export function Icon({
   name,
@@ -28,6 +31,15 @@ export function Icon({
         <rect x="14" y="3" width="7" height="7" rx="2" />
         <rect x="3" y="14" width="7" height="7" rx="2" />
         <rect x="14" y="14" width="7" height="7" rx="2" />
+      </>
+    ),
+    markets: (
+      <>
+        <path d="M4 19V9" />
+        <path d="M10 19V5" />
+        <path d="M16 19v-7" />
+        <path d="M22 19V3" />
+        <path d="M2 19h20" />
       </>
     ),
     swap: (
@@ -112,6 +124,18 @@ export function Icon({
       <>
         <path d="M4 4v6h6" />
         <path d="M5.5 16a8 8 0 1 0 .5-9l-2 3" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m16 16 5 5" />
+      </>
+    ),
+    mail: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="m4 7 8 6 8-6" />
       </>
     ),
   };
