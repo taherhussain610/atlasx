@@ -5,9 +5,18 @@ import {
   ChainId,
   getChain,
   getToken,
-  INITIAL_BALANCES,
   WalletKind,
 } from "@/lib/atlas";
+import {
+  Activity,
+  CreateOrderInput,
+  freshSandboxState,
+  LiquidityPosition,
+  parseSandboxState,
+  SandboxOrder,
+  SandboxState,
+  StakePosition,
+} from "@/lib/sandbox-state";
 import {
   createContext,
   ReactNode,
@@ -55,71 +64,14 @@ export type WalletSession = {
   sandbox: boolean;
 };
 
-export type Activity = {
-  id: string;
-  type: "swap" | "liquidity" | "stake" | "reward" | "order";
-  title: string;
-  detail: string;
-  chainId: ChainId;
-  valueUsd: number;
-  timestamp: number;
-};
-
-export type LiquidityPosition = {
-  id: string;
-  chainId: ChainId;
-  tokenA: string;
-  tokenB: string;
-  amountA: number;
-  amountB: number;
-  valueUsd: number;
-  share: number;
-  createdAt: number;
-};
-
-export type StakePosition = {
-  id: string;
-  chainId: ChainId;
-  token: string;
-  amount: number;
-  apr: number;
-  lockDays: number;
-  startedAt: number;
-  claimedRewards: number;
-};
-
-export type SandboxOrder = {
-  id: string;
-  chainId: ChainId;
-  kind: "limit" | "dca";
-  fromToken: string;
-  toToken: string;
-  amount: number;
-  targetRate: number | null;
-  intervalDays: number | null;
-  totalExecutions: number;
-  completedExecutions: number;
-  status: "open" | "active" | "filled" | "cancelled";
-  createdAt: number;
-};
-
-export type CreateOrderInput = {
-  kind: SandboxOrder["kind"];
-  fromToken: string;
-  toToken: string;
-  amount: number;
-  targetRate?: number;
-  intervalDays?: number;
-  totalExecutions?: number;
-};
-
-type SandboxState = {
-  balances: Record<ChainId, Record<string, number>>;
-  activity: Activity[];
-  liquidityPositions: LiquidityPosition[];
-  stakePositions: StakePosition[];
-  orders: SandboxOrder[];
-};
+export type {
+  Activity,
+  CreateOrderInput,
+  LiquidityPosition,
+  SandboxOrder,
+  SandboxState,
+  StakePosition,
+} from "@/lib/sandbox-state";
 
 type DetectedWallets = {
   evm: boolean;
@@ -152,21 +104,6 @@ type AtlasContextValue = SandboxState & {
 
 const STORAGE_KEY = "atlasx-sandbox-v1";
 
-function freshState(): SandboxState {
-  return {
-    balances: {
-      bnb: { ...INITIAL_BALANCES.bnb },
-      tron: { ...INITIAL_BALANCES.tron },
-      solana: { ...INITIAL_BALANCES.solana },
-      abstract: { ...INITIAL_BALANCES.abstract },
-    },
-    activity: [],
-    liquidityPositions: [],
-    stakePositions: [],
-    orders: [],
-  };
-}
-
 function makeId(prefix: string): string {
   const suffix =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -181,26 +118,6 @@ function sandboxAddress(chainId: ChainId): string {
   return "0xA71a5A5D5F0cB2e9eAE6A48F4a76f0cF9E2aB310";
 }
 
-function restoreState(value: unknown): SandboxState | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<SandboxState>;
-  if (
-    !candidate.balances ||
-    !Array.isArray(candidate.activity) ||
-    !Array.isArray(candidate.liquidityPositions) ||
-    !Array.isArray(candidate.stakePositions)
-  ) {
-    return null;
-  }
-  return {
-    balances: candidate.balances,
-    activity: candidate.activity,
-    liquidityPositions: candidate.liquidityPositions,
-    stakePositions: candidate.stakePositions,
-    orders: Array.isArray(candidate.orders) ? candidate.orders : [],
-  };
-}
-
 function withActivity(activity: Activity[], item: Activity): Activity[] {
   return [item, ...activity].slice(0, 50);
 }
@@ -211,7 +128,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   const [chainId, setChainId] = useState<ChainId>("bnb");
   const [wallet, setWallet] = useState<WalletSession | null>(null);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
-  const [state, setState] = useState<SandboxState>(freshState);
+  const [state, setState] = useState<SandboxState>(freshSandboxState);
   const [hydrated, setHydrated] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [detectedWallets, setDetectedWallets] = useState<DetectedWallets>({
@@ -233,7 +150,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed: unknown = JSON.parse(stored);
-        restoredState = restoreState(parsed);
+        restoredState = parseSandboxState(parsed);
       }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -773,7 +690,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   }, [notify]);
 
   const resetSandbox = useCallback(() => {
-    setState(freshState());
+    setState(freshSandboxState());
     notify("Sandbox portfolio reset.");
   }, [notify]);
 
