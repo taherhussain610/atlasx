@@ -104,41 +104,90 @@ type AtlasContextValue = SandboxState & {
   claimStakeRewards: (positionId: string) => void;
   unstake: (positionId: string) => void;
   resetSandbox: () => void;
+  resolvePersistenceConflict: () => void;
 };
 
 const STORAGE_KEY = "atlasx-sandbox-v1";
 const STORAGE_UPDATED_AT_KEY = "atlasx-sandbox-updated-at-v1";
+const STORAGE_REVISION_KEY = "atlasx-sandbox-revision-v1";
 
 type LocalPortfolio = {
   state: SandboxState;
   updatedAt: number;
+  revision: number | null;
   exists: boolean;
 };
+
+type PendingSync = {
+  state: SandboxState;
+  serializedState: string;
+  updatedAt: number;
+};
+
+function storedRevision(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 1
+    ? value
+    : null;
+}
 
 function localPortfolio(): LocalPortfolio {
   const fallback = freshSandboxState();
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return { state: fallback, updatedAt: 0, exists: false };
+    if (!stored) {
+      return { state: fallback, updatedAt: 0, revision: null, exists: false };
+    }
 
-    const state = parseSandboxState(JSON.parse(stored) as unknown);
+    const parsed = JSON.parse(stored) as unknown;
+    const envelope =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    const versioned = envelope?.version === 2;
+    const state = parseSandboxState(versioned ? envelope.state : parsed);
     if (!state) throw new Error("Invalid local portfolio.");
-    const storedUpdatedAt = Number(
-      window.localStorage.getItem(STORAGE_UPDATED_AT_KEY),
-    );
+    const legacyUpdatedAt = Number(window.localStorage.getItem(STORAGE_UPDATED_AT_KEY));
+    const updatedAt = versioned ? envelope.updatedAt : legacyUpdatedAt;
+    const revision = versioned
+      ? storedRevision(envelope.revision)
+      : storedRevision(Number(window.localStorage.getItem(STORAGE_REVISION_KEY)));
     return {
       state,
       updatedAt:
-        Number.isSafeInteger(storedUpdatedAt) && storedUpdatedAt > 0
-          ? storedUpdatedAt
+        typeof updatedAt === "number" &&
+        Number.isSafeInteger(updatedAt) &&
+        updatedAt > 0
+          ? updatedAt
           : Date.now(),
+      revision,
       exists: true,
     };
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
     window.localStorage.removeItem(STORAGE_UPDATED_AT_KEY);
-    return { state: fallback, updatedAt: 0, exists: false };
+    window.localStorage.removeItem(STORAGE_REVISION_KEY);
+    return {
+      state: fallback,
+      updatedAt: 0,
+      revision: null,
+      exists: false,
+    };
   }
+}
+
+function writeLocalPortfolio(
+  state: SandboxState,
+  updatedAt: number,
+  revision: number | null,
+): void {
+  window.localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ version: 2, state, updatedAt, revision }),
+  );
+  window.localStorage.removeItem(STORAGE_UPDATED_AT_KEY);
+  window.localStorage.removeItem(STORAGE_REVISION_KEY);
 }
 
 function remotePortfolio(value: unknown): {
@@ -219,6 +268,9 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   const localUpdatedAt = useRef(0);
   const lastSyncedState = useRef<string | null>(null);
   const portfolioRevision = useRef<number | null>(null);
+  const pendingSync = useRef<PendingSync | null>(null);
+  const syncInFlight = useRef(false);
+  const syncMounted = useRef(true);
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -226,13 +278,87 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     toastTimer.current = setTimeout(() => setToast(null), 3600);
   }, []);
 
+  const flushMysqlSync = useCallback(async () => {
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
+
+    try {
+      while (pendingSync.current) {
+        const snapshot = pendingSync.current;
+        pendingSync.current = null;
+        const expectedRevision = portfolioRevision.current;
+
+        let response: Response;
+        try {
+          response = await fetch("/api/portfolio", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              state: snapshot.state,
+              updatedAt: snapshot.updatedAt,
+              revision: expectedRevision,
+            }),
+            cache: "no-store",
+          });
+        } catch {
+          pendingSync.current = null;
+          if (syncMounted.current) setPersistenceMode("browser");
+          break;
+        }
+
+        if (!syncMounted.current) break;
+        if (response.status === 409) {
+          pendingSync.current = null;
+          setMysqlSyncEnabled(false);
+          setPersistenceMode("conflict");
+          break;
+        }
+        if (!response.ok) {
+          pendingSync.current = null;
+          setPersistenceMode("browser");
+          break;
+        }
+
+        const result = (await response.json()) as { revision?: unknown };
+        if (
+          !Number.isSafeInteger(result.revision) ||
+          Number(result.revision) < 1
+        ) {
+          pendingSync.current = null;
+          setPersistenceMode("browser");
+          break;
+        }
+
+        portfolioRevision.current = Number(result.revision);
+        const stored = localPortfolio();
+        if (
+          stored.exists &&
+          JSON.stringify(stored.state) === snapshot.serializedState
+        ) {
+          writeLocalPortfolio(
+            snapshot.state,
+            snapshot.updatedAt,
+            portfolioRevision.current,
+          );
+        }
+        lastSyncedState.current = snapshot.serializedState;
+        setPersistenceMode("mysql");
+      }
+    } finally {
+      syncInFlight.current = false;
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    syncMounted.current = true;
     const local = localPortfolio();
+    portfolioRevision.current = local.revision;
 
     async function initialize() {
       let selectedState = local.state;
       let mysqlEnabled = false;
+      let initialPersistence: PersistenceMode = "browser";
 
       try {
         const response = await fetch("/api/portfolio", {
@@ -244,20 +370,32 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
         const remote = remotePortfolio(await response.json());
         if (!remote) throw new Error("Portfolio sync returned invalid data.");
         mysqlEnabled = remote.configured;
-        if (
-          remote.portfolio &&
-          (!local.exists || remote.portfolio.updatedAt > local.updatedAt)
-        ) {
-          selectedState = remote.portfolio.state;
-        }
-        portfolioRevision.current = remote.portfolio?.revision ?? null;
-        lastSyncedState.current = remote.portfolio
-          ? JSON.stringify(remote.portfolio.state)
-          : local.exists
+        initialPersistence = mysqlEnabled ? "mysql" : "browser";
+
+        if (remote.portfolio) {
+          const localState = JSON.stringify(local.state);
+          const remoteState = JSON.stringify(remote.portfolio.state);
+          if (!local.exists || localState === remoteState) {
+            selectedState = remote.portfolio.state;
+            portfolioRevision.current = remote.portfolio.revision;
+            lastSyncedState.current = remoteState;
+          } else if (local.revision === remote.portfolio.revision) {
+            portfolioRevision.current = remote.portfolio.revision;
+            lastSyncedState.current = remoteState;
+          } else {
+            mysqlEnabled = false;
+            initialPersistence = "conflict";
+            lastSyncedState.current = remoteState;
+          }
+        } else {
+          portfolioRevision.current = null;
+          lastSyncedState.current = local.exists
             ? null
             : JSON.stringify(selectedState);
+        }
       } catch {
         mysqlEnabled = false;
+        initialPersistence = "browser";
       }
 
       if (cancelled) return;
@@ -268,13 +406,14 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
         tron: Boolean(window.tronLink),
       });
       setMysqlSyncEnabled(mysqlEnabled);
-      setPersistenceMode(mysqlEnabled ? "mysql" : "browser");
+      setPersistenceMode(initialPersistence);
       setHydrated(true);
     }
 
     void initialize();
     return () => {
       cancelled = true;
+      syncMounted.current = false;
     };
   }, []);
 
@@ -282,57 +421,32 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     if (!hydrated) return;
     const updatedAt = Date.now();
     localUpdatedAt.current = updatedAt;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    window.localStorage.setItem(STORAGE_UPDATED_AT_KEY, String(updatedAt));
+    writeLocalPortfolio(state, updatedAt, portfolioRevision.current);
   }, [hydrated, state]);
 
   useEffect(() => {
     if (!hydrated || !mysqlSyncEnabled) return;
 
     const serializedState = JSON.stringify(state);
-    if (serializedState === lastSyncedState.current) return;
+    if (
+      serializedState === lastSyncedState.current &&
+      !syncInFlight.current &&
+      !pendingSync.current
+    ) {
+      return;
+    }
 
-    const controller = new AbortController();
     const timeout = window.setTimeout(() => {
-      void fetch("/api/portfolio", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          state,
-          updatedAt: localUpdatedAt.current || Date.now(),
-          revision: portfolioRevision.current,
-        }),
-        cache: "no-store",
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          if (response.status === 409) {
-            setMysqlSyncEnabled(false);
-            setPersistenceMode("conflict");
-            return;
-          }
-          if (!response.ok) throw new Error("Portfolio sync failed.");
-          const result = (await response.json()) as { revision?: unknown };
-          if (
-            !Number.isSafeInteger(result.revision) ||
-            Number(result.revision) < 1
-          ) {
-            throw new Error("Portfolio sync returned invalid data.");
-          }
-          portfolioRevision.current = Number(result.revision);
-          lastSyncedState.current = serializedState;
-          setPersistenceMode("mysql");
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) setPersistenceMode("browser");
-        });
+      pendingSync.current = {
+        state,
+        serializedState,
+        updatedAt: localUpdatedAt.current || Date.now(),
+      };
+      void flushMysqlSync();
     }, 600);
 
-    return () => {
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [hydrated, mysqlSyncEnabled, state]);
+    return () => window.clearTimeout(timeout);
+  }, [flushMysqlSync, hydrated, mysqlSyncEnabled, state]);
 
   useEffect(() => {
     const provider = window.ethereum;
@@ -903,6 +1017,13 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     notify("Sandbox portfolio reset.");
   }, [hydrated, notify]);
 
+  const resolvePersistenceConflict = useCallback(() => {
+    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(STORAGE_UPDATED_AT_KEY);
+    window.localStorage.removeItem(STORAGE_REVISION_KEY);
+    window.location.reload();
+  }, []);
+
   const isWalletCompatible =
     Boolean(wallet) &&
     (wallet?.kind === "sandbox" || wallet?.kind === getChain(chainId).walletKind);
@@ -931,6 +1052,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       claimStakeRewards,
       unstake,
       resetSandbox,
+      resolvePersistenceConflict,
     }),
     [
       state,
@@ -954,6 +1076,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       claimStakeRewards,
       unstake,
       resetSandbox,
+      resolvePersistenceConflict,
     ],
   );
 

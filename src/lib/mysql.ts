@@ -23,8 +23,16 @@ type CountRow = RowDataPacket & {
   portfolio_count: number | string;
 };
 
+type ColumnCountRow = RowDataPacket & {
+  column_count: number | string;
+};
+
 type LockRow = RowDataPacket & {
   acquired: number | string | null;
+};
+
+type RevisionRow = RowDataPacket & {
+  revision: number | string;
 };
 
 type AtlasGlobal = typeof globalThis & {
@@ -97,29 +105,52 @@ function getPool(): Pool {
   return atlasGlobal.atlasxMysqlPool;
 }
 
+async function initializeSchema(): Promise<void> {
+  const pool = getPool();
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS atlasx_sandbox_portfolios (
+      portfolio_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      state_json JSON NOT NULL,
+      client_updated_at BIGINT UNSIGNED NOT NULL,
+      revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
+      updated_at TIMESTAMP(3) NOT NULL
+        DEFAULT CURRENT_TIMESTAMP(3)
+        ON UPDATE CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (portfolio_id),
+      INDEX idx_atlasx_portfolios_updated_at (updated_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  const [columns] = await pool.execute<ColumnCountRow[]>(
+    `
+      SELECT COUNT(*) AS column_count
+      FROM information_schema.columns
+      WHERE
+        table_schema = DATABASE()
+        AND table_name = 'atlasx_sandbox_portfolios'
+        AND column_name = 'revision'
+    `,
+  );
+  if (Number(columns[0]?.column_count) === 0) {
+    try {
+      await pool.execute(`
+        ALTER TABLE atlasx_sandbox_portfolios
+        ADD COLUMN revision BIGINT UNSIGNED NOT NULL DEFAULT 1
+        AFTER client_updated_at
+      `);
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ER_DUP_FIELDNAME") throw error;
+    }
+  }
+}
+
 async function ensureSchema(): Promise<void> {
   if (!atlasGlobal.atlasxMysqlSchema) {
-    atlasGlobal.atlasxMysqlSchema = getPool()
-      .execute(`
-        CREATE TABLE IF NOT EXISTS atlasx_sandbox_portfolios (
-          portfolio_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-          state_json JSON NOT NULL,
-          client_updated_at BIGINT UNSIGNED NOT NULL,
-          revision BIGINT UNSIGNED NOT NULL DEFAULT 1,
-          updated_at TIMESTAMP(3) NOT NULL
-            DEFAULT CURRENT_TIMESTAMP(3)
-            ON UPDATE CURRENT_TIMESTAMP(3),
-          PRIMARY KEY (portfolio_id),
-          INDEX idx_atlasx_portfolios_updated_at (updated_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `)
-      .then(() => undefined)
-      .catch((error: unknown) => {
-        atlasGlobal.atlasxMysqlSchema = undefined;
-        throw error;
-      });
+    atlasGlobal.atlasxMysqlSchema = initializeSchema().catch((error: unknown) => {
+      atlasGlobal.atlasxMysqlSchema = undefined;
+      throw error;
+    });
   }
-
   await atlasGlobal.atlasxMysqlSchema;
 }
 
@@ -203,6 +234,19 @@ async function createSandboxPortfolio(
     );
     lockAcquired = Number(lockRows[0]?.acquired) === 1;
     if (!lockAcquired) throw new Error("Portfolio creation is busy.");
+
+    const [existingRows] = await connection.execute<RevisionRow[]>(
+      `
+        SELECT revision
+        FROM atlasx_sandbox_portfolios
+        WHERE portfolio_id = ?
+        LIMIT 1
+      `,
+      [portfolioId],
+    );
+    if (existingRows[0]) {
+      throw new PortfolioConflictError("Portfolio already exists.");
+    }
 
     const retentionDays = integerEnvironmentValue(
       "MYSQL_PORTFOLIO_RETENTION_DAYS",

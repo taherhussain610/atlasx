@@ -5,7 +5,10 @@ import {
   PortfolioConflictError,
   saveSandboxPortfolio,
 } from "@/lib/mysql";
-import { parseSandboxState } from "@/lib/sandbox-state";
+import {
+  MAX_SANDBOX_COLLECTION_SIZE,
+  parseSandboxState,
+} from "@/lib/sandbox-state";
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -44,9 +47,10 @@ function setPortfolioCookie(response: NextResponse, id: string): void {
 
 function isSameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
-  if (!origin) return false;
+  const host = request.headers.get("host");
+  if (!origin || !host) return false;
   try {
-    return new URL(origin).host === request.nextUrl.host;
+    return new URL(origin).host === host;
   } catch {
     return false;
   }
@@ -121,7 +125,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = payload as Record<string, unknown>;
-  const state = parseSandboxState(body.state);
+  const state = parseSandboxState(body.state, MAX_SANDBOX_COLLECTION_SIZE);
   const updatedAt = body.updatedAt;
   const revision = body.revision;
   if (

@@ -75,6 +75,7 @@ const ACTIVITY_TYPES = ["swap", "liquidity", "stake", "reward", "order"] as cons
 const ORDER_KINDS = ["limit", "dca"] as const;
 const ORDER_STATUSES = ["open", "active", "filled", "cancelled"] as const;
 export const MAX_SANDBOX_COLLECTION_SIZE = 50;
+const MAX_RESTORED_COLLECTION_SIZE = 500;
 const MAX_AMOUNT = 1_000_000_000_000_000;
 
 type JsonRecord = Record<string, unknown>;
@@ -300,17 +301,33 @@ function parseCollection<T>(
   return parsed.every((item): item is T => item !== null) ? parsed : null;
 }
 
-export function parseSandboxState(value: unknown): SandboxState | null {
+export function parseSandboxState(
+  value: unknown,
+  maximumCollectionSize = MAX_RESTORED_COLLECTION_SIZE,
+): SandboxState | null {
   if (!isRecord(value)) return null;
 
   const balances = parseBalances(value.balances);
-  const activity = parseCollection(value.activity, parseActivity);
+  const activity = parseCollection(
+    value.activity,
+    parseActivity,
+    maximumCollectionSize,
+  );
   const liquidityPositions = parseCollection(
     value.liquidityPositions,
     parseLiquidityPosition,
+    maximumCollectionSize,
   );
-  const stakePositions = parseCollection(value.stakePositions, parseStakePosition);
-  const orders = parseCollection(value.orders ?? [], parseOrder);
+  const stakePositions = parseCollection(
+    value.stakePositions,
+    parseStakePosition,
+    maximumCollectionSize,
+  );
+  const orders = parseCollection(
+    value.orders ?? [],
+    parseOrder,
+    maximumCollectionSize,
+  );
 
   if (!balances || !activity || !liquidityPositions || !stakePositions || !orders) {
     return null;

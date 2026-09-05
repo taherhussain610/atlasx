@@ -29,6 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     walletModalOpen,
     persistenceMode,
     toast,
+    resolvePersistenceConflict,
     setWalletModalOpen,
     selectChain,
     resetSandbox,
@@ -197,6 +198,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span>✓</span>
           {toast}
         </div>
+      )}
+      {persistenceMode === "conflict" && (
+        <button
+          className="sync-alert"
+          type="button"
+          onClick={resolvePersistenceConflict}
+        >
+          <strong>MySQL sync paused</strong>
+          <span>A newer saved copy exists. Use the MySQL copy.</span>
+        </button>
       )}
     </div>
   );
