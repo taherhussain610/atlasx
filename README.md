@@ -6,7 +6,7 @@ Sandbox actions never broadcast transactions or use real funds.
 
 ## Features
 
-- Persistent browser-based balances and strategy history
+- Persistent browser-based balances and strategy history with optional MySQL sync
 - Swap routing with fee, slippage, price-impact, and minimum-output estimates
 - Live reference markets with search, watchlists, chart ranges, depth, and trade tape
 - Persistent sandbox limit orders and scheduled DCA plans with manual fill simulation
@@ -52,6 +52,37 @@ request and does not accept methods or parameters from clients.
 
 Do not reuse a key that has been shared publicly. Revoke exposed credentials in
 the Tatum dashboard before configuring this project.
+
+## MySQL configuration
+
+AtlasX can save each browser's sandbox portfolio to MySQL while retaining
+`localStorage` as an automatic fallback. Only simulated balances, orders,
+positions, and activity are stored. Wallet addresses, wallet credentials, and
+real transactions are never written to the database.
+
+Set the following server-only environment variables in `.env.local` locally and
+in the application settings for `atlasx.online`:
+
+```dotenv
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=u340208828_atlasx
+MYSQL_USER=u340208828_atlasx
+MYSQL_PASSWORD=your-database-password
+MYSQL_SSL=false
+```
+
+Use the database hostname shown in the hosting control panel if it is not
+`localhost`. Set `MYSQL_SSL=true` only when the database endpoint supports a
+certificate trusted by Node.js. Never prefix these variables with
+`NEXT_PUBLIC_`, and never commit the real password.
+
+The server creates the `atlasx_sandbox_portfolios` table on the first sync. The
+same idempotent statement is available in [`database/schema.sql`](database/schema.sql)
+for manual setup. Each browser receives a random, HTTP-only portfolio cookie,
+and `GET`/`PUT /api/portfolio` loads or replaces that browser's latest snapshot.
+If MySQL is unavailable or not configured, AtlasX continues using browser
+storage without interrupting sandbox trading.
 
 ## Wallet behavior
 

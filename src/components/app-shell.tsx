@@ -27,6 +27,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     chainId,
     wallet,
     walletModalOpen,
+    persistenceMode,
     toast,
     setWalletModalOpen,
     selectChain,
@@ -66,7 +67,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
             <div>
               <strong>Sandbox mode</strong>
-              <span>No real funds at risk</span>
+              <span>
+                No real funds ·{" "}
+                {persistenceMode === "mysql"
+                  ? "MySQL synced"
+                  : persistenceMode === "checking"
+                    ? "checking storage"
+                    : "browser saved"}
+              </span>
             </div>
           </div>
           <a className="text-button" href="mailto:info@atlasx.online">
