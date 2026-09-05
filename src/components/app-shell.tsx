@@ -73,6 +73,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                   ? "MySQL synced"
                   : persistenceMode === "checking"
                     ? "checking storage"
+                    : persistenceMode === "conflict"
+                      ? "sync paused"
                     : "browser saved"}
               </span>
             </div>
@@ -81,7 +83,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Icon name="mail" size={15} />
             Email support
           </a>
-          <button className="text-button" type="button" onClick={resetSandbox}>
+          <button
+            className="text-button"
+            type="button"
+            onClick={resetSandbox}
+            disabled={persistenceMode === "checking"}
+          >
             <Icon name="reset" size={16} />
             Reset portfolio
           </button>

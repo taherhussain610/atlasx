@@ -74,7 +74,7 @@ const CHAIN_IDS = ["bnb", "tron", "solana", "abstract"] as const;
 const ACTIVITY_TYPES = ["swap", "liquidity", "stake", "reward", "order"] as const;
 const ORDER_KINDS = ["limit", "dca"] as const;
 const ORDER_STATUSES = ["open", "active", "filled", "cancelled"] as const;
-const MAX_COLLECTION_SIZE = 500;
+export const MAX_SANDBOX_COLLECTION_SIZE = 50;
 const MAX_AMOUNT = 1_000_000_000_000_000;
 
 type JsonRecord = Record<string, unknown>;
@@ -293,7 +293,7 @@ function parseOrder(value: unknown): SandboxOrder | null {
 function parseCollection<T>(
   value: unknown,
   parser: (item: unknown) => T | null,
-  maximum = MAX_COLLECTION_SIZE,
+  maximum = MAX_SANDBOX_COLLECTION_SIZE,
 ): T[] | null {
   if (!Array.isArray(value) || value.length > maximum) return null;
   const parsed = value.map(parser);
@@ -304,7 +304,7 @@ export function parseSandboxState(value: unknown): SandboxState | null {
   if (!isRecord(value)) return null;
 
   const balances = parseBalances(value.balances);
-  const activity = parseCollection(value.activity, parseActivity, 50);
+  const activity = parseCollection(value.activity, parseActivity);
   const liquidityPositions = parseCollection(
     value.liquidityPositions,
     parseLiquidityPosition,

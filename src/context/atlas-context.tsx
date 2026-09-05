@@ -12,6 +12,7 @@ import {
   CreateOrderInput,
   freshSandboxState,
   LiquidityPosition,
+  MAX_SANDBOX_COLLECTION_SIZE,
   parseSandboxState,
   SandboxOrder,
   SandboxState,
@@ -79,7 +80,7 @@ type DetectedWallets = {
   tron: boolean;
 };
 
-export type PersistenceMode = "checking" | "browser" | "mysql";
+export type PersistenceMode = "checking" | "browser" | "mysql" | "conflict";
 
 type AtlasContextValue = SandboxState & {
   chainId: ChainId;
@@ -142,7 +143,7 @@ function localPortfolio(): LocalPortfolio {
 
 function remotePortfolio(value: unknown): {
   configured: boolean;
-  portfolio: { state: SandboxState; updatedAt: number } | null;
+  portfolio: { state: SandboxState; updatedAt: number; revision: number } | null;
 } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const response = value as Record<string, unknown>;
@@ -163,13 +164,19 @@ function remotePortfolio(value: unknown): {
   if (
     !state ||
     !Number.isSafeInteger(portfolio.updatedAt) ||
-    Number(portfolio.updatedAt) < 0
+    Number(portfolio.updatedAt) < 0 ||
+    !Number.isSafeInteger(portfolio.revision) ||
+    Number(portfolio.revision) < 1
   ) {
     return null;
   }
   return {
     configured: true,
-    portfolio: { state, updatedAt: Number(portfolio.updatedAt) },
+    portfolio: {
+      state,
+      updatedAt: Number(portfolio.updatedAt),
+      revision: Number(portfolio.revision),
+    },
   };
 }
 
@@ -211,6 +218,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localUpdatedAt = useRef(0);
   const lastSyncedState = useRef<string | null>(null);
+  const portfolioRevision = useRef<number | null>(null);
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -242,6 +250,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
         ) {
           selectedState = remote.portfolio.state;
         }
+        portfolioRevision.current = remote.portfolio?.revision ?? null;
         lastSyncedState.current = remote.portfolio
           ? JSON.stringify(remote.portfolio.state)
           : local.exists
@@ -291,12 +300,26 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           state,
           updatedAt: localUpdatedAt.current || Date.now(),
+          revision: portfolioRevision.current,
         }),
         cache: "no-store",
         signal: controller.signal,
       })
-        .then((response) => {
+        .then(async (response) => {
+          if (response.status === 409) {
+            setMysqlSyncEnabled(false);
+            setPersistenceMode("conflict");
+            return;
+          }
           if (!response.ok) throw new Error("Portfolio sync failed.");
+          const result = (await response.json()) as { revision?: unknown };
+          if (
+            !Number.isSafeInteger(result.revision) ||
+            Number(result.revision) < 1
+          ) {
+            throw new Error("Portfolio sync returned invalid data.");
+          }
+          portfolioRevision.current = Number(result.revision);
           lastSyncedState.current = serializedState;
           setPersistenceMode("mysql");
         })
@@ -425,6 +448,9 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   );
 
   const requireReadyWallet = useCallback(() => {
+    if (!hydrated) {
+      throw new Error("Your sandbox portfolio is still loading.");
+    }
     const required = getChain(chainId).walletKind;
     if (!wallet) {
       setWalletModalOpen(true);
@@ -434,7 +460,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       setWalletModalOpen(true);
       throw new Error(`Connect a compatible ${required.toUpperCase()} wallet.`);
     }
-  }, [chainId, wallet]);
+  }, [chainId, hydrated, wallet]);
 
   const executeSwap = useCallback(
     (from: string, to: string, amountIn: number, amountOut: number) => {
@@ -471,6 +497,12 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   const createOrder = useCallback(
     (input: CreateOrderInput) => {
       requireReadyWallet();
+      const activeOrders = state.orders.filter((order) =>
+        ["open", "active"].includes(order.status),
+      );
+      if (activeOrders.length >= MAX_SANDBOX_COLLECTION_SIZE) {
+        throw new Error("Complete or cancel an active order before adding another.");
+      }
       if (input.fromToken === input.toToken) {
         throw new Error("Choose two different assets.");
       }
@@ -519,22 +551,39 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       };
       const valueUsd = input.amount * getToken(chainId, input.fromToken).price;
 
-      setState((current) => ({
-        ...current,
-        orders: [order, ...current.orders],
-        activity: withActivity(current.activity, {
-          id: makeId("order"),
-          type: "order",
-          title: `Created ${input.kind.toUpperCase()} order`,
-          detail: `${input.amount.toLocaleString()} ${input.fromToken} → ${input.toToken}`,
-          chainId,
-          valueUsd,
-          timestamp: Date.now(),
-        }),
-      }));
+      setState((current) => {
+        const active = current.orders.filter((item) =>
+          ["open", "active"].includes(item.status),
+        );
+        const archived = current.orders.filter(
+          (item) => !["open", "active"].includes(item.status),
+        );
+        return {
+          ...current,
+          orders: [order, ...active, ...archived].slice(
+            0,
+            MAX_SANDBOX_COLLECTION_SIZE,
+          ),
+          activity: withActivity(current.activity, {
+            id: makeId("order"),
+            type: "order",
+            title: `Created ${input.kind.toUpperCase()} order`,
+            detail: `${input.amount.toLocaleString()} ${input.fromToken} → ${input.toToken}`,
+            chainId,
+            valueUsd,
+            timestamp: Date.now(),
+          }),
+        };
+      });
       notify(input.kind === "limit" ? "Limit order created." : "DCA plan activated.");
     },
-    [chainId, notify, requireReadyWallet, state.balances],
+    [
+      chainId,
+      notify,
+      requireReadyWallet,
+      state.balances,
+      state.orders,
+    ],
   );
 
   const executeOrder = useCallback(
@@ -598,6 +647,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
 
   const cancelOrder = useCallback(
     (orderId: string) => {
+      requireReadyWallet();
       const order = state.orders.find((item) => item.id === orderId);
       if (!order || !["open", "active"].includes(order.status)) {
         throw new Error("This order is no longer active.");
@@ -619,12 +669,15 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       }));
       notify("Order cancelled.");
     },
-    [notify, state.orders],
+    [notify, requireReadyWallet, state.orders],
   );
 
   const addLiquidity = useCallback(
     (tokenA: string, tokenB: string, amountA: number, amountB: number) => {
       requireReadyWallet();
+      if (state.liquidityPositions.length >= MAX_SANDBOX_COLLECTION_SIZE) {
+        throw new Error("Withdraw a liquidity position before adding another.");
+      }
       const chainBalances = state.balances[chainId];
       if (amountA <= 0 || amountB <= 0) throw new Error("Enter both token amounts.");
       if (amountA > (chainBalances[tokenA] ?? 0)) {
@@ -670,7 +723,13 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       }));
       notify("Liquidity position created.");
     },
-    [chainId, notify, requireReadyWallet, state.balances],
+    [
+      chainId,
+      notify,
+      requireReadyWallet,
+      state.balances,
+      state.liquidityPositions.length,
+    ],
   );
 
   const withdrawLiquidity = useCallback(
@@ -713,6 +772,9 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   const createStake = useCallback(
     (token: string, amount: number, apr: number, lockDays: number) => {
       requireReadyWallet();
+      if (state.stakePositions.length >= MAX_SANDBOX_COLLECTION_SIZE) {
+        throw new Error("Unstake a position before adding another.");
+      }
       const available = state.balances[chainId][token] ?? 0;
       if (amount <= 0) throw new Error("Enter a valid stake amount.");
       if (amount > available) throw new Error(`Insufficient ${token} balance.`);
@@ -748,7 +810,13 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       }));
       notify("Stake activated in sandbox mode.");
     },
-    [chainId, notify, requireReadyWallet, state.balances],
+    [
+      chainId,
+      notify,
+      requireReadyWallet,
+      state.balances,
+      state.stakePositions.length,
+    ],
   );
 
   const claimStakeRewards = useCallback(
@@ -830,9 +898,10 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   }, [notify]);
 
   const resetSandbox = useCallback(() => {
+    if (!hydrated) return;
     setState(freshSandboxState());
     notify("Sandbox portfolio reset.");
-  }, [notify]);
+  }, [hydrated, notify]);
 
   const isWalletCompatible =
     Boolean(wallet) &&

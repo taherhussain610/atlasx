@@ -70,6 +70,8 @@ MYSQL_DATABASE=u340208828_atlasx
 MYSQL_USER=u340208828_atlasx
 MYSQL_PASSWORD=your-database-password
 MYSQL_SSL=false
+MYSQL_MAX_PORTFOLIOS=100
+MYSQL_PORTFOLIO_RETENTION_DAYS=90
 ```
 
 Use the database hostname shown in the hosting control panel if it is not
@@ -81,6 +83,9 @@ The server creates the `atlasx_sandbox_portfolios` table on the first sync. The
 same idempotent statement is available in [`database/schema.sql`](database/schema.sql)
 for manual setup. Each browser receives a random, HTTP-only portfolio cookie,
 and `GET`/`PUT /api/portfolio` loads or replaces that browser's latest snapshot.
+Writes use revision checks so one tab cannot silently overwrite another. New
+portfolio creation is serialized and bounded by `MYSQL_MAX_PORTFOLIOS`, while
+inactive rows are removed after `MYSQL_PORTFOLIO_RETENTION_DAYS`.
 If MySQL is unavailable or not configured, AtlasX continues using browser
 storage without interrupting sandbox trading.
 

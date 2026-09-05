@@ -1,6 +1,8 @@
 import {
   isMysqlConfigured,
   loadSandboxPortfolio,
+  PortfolioCapacityError,
+  PortfolioConflictError,
   saveSandboxPortfolio,
 } from "@/lib/mysql";
 import { parseSandboxState } from "@/lib/sandbox-state";
@@ -42,12 +44,34 @@ function setPortfolioCookie(response: NextResponse, id: string): void {
 
 function isSameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
-  if (!origin) return true;
+  if (!origin) return false;
   try {
     return new URL(origin).host === request.nextUrl.host;
   } catch {
     return false;
   }
+}
+
+async function readJsonBody(request: NextRequest): Promise<unknown> {
+  if (!request.body) throw new Error("Request body is missing.");
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let body = "";
+  let bytesRead = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytesRead += value.byteLength;
+    if (bytesRead > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw new RangeError("Portfolio payload is too large.");
+    }
+    body += decoder.decode(value, { stream: true });
+  }
+  body += decoder.decode();
+  return JSON.parse(body) as unknown;
 }
 
 export async function GET(request: NextRequest) {
@@ -84,12 +108,11 @@ export async function PUT(request: NextRequest) {
 
   let payload: unknown;
   try {
-    const body = await request.text();
-    if (Buffer.byteLength(body, "utf8") > MAX_BODY_BYTES) {
+    payload = await readJsonBody(request);
+  } catch (error) {
+    if (error instanceof RangeError) {
       return json({ configured: true, error: "Portfolio payload is too large." }, 413);
     }
-    payload = JSON.parse(body) as unknown;
-  } catch {
     return json({ configured: true, error: "Invalid JSON payload." }, 400);
   }
 
@@ -100,22 +123,41 @@ export async function PUT(request: NextRequest) {
   const body = payload as Record<string, unknown>;
   const state = parseSandboxState(body.state);
   const updatedAt = body.updatedAt;
+  const revision = body.revision;
   if (
     !state ||
+    typeof updatedAt !== "number" ||
     !Number.isSafeInteger(updatedAt) ||
-    Number(updatedAt) < 0 ||
-    Number(updatedAt) > Date.now() + 5 * 60_000
+    updatedAt < 0 ||
+    updatedAt > Date.now() + 5 * 60_000 ||
+    !(
+      revision === null ||
+      (typeof revision === "number" &&
+        Number.isSafeInteger(revision) &&
+        revision >= 1)
+    )
   ) {
     return json({ configured: true, error: "Invalid portfolio payload." }, 400);
   }
 
   const identity = portfolioId(request);
   try {
-    await saveSandboxPortfolio(identity.id, state, Number(updatedAt));
-    const response = json({ configured: true, saved: true });
+    const nextRevision = await saveSandboxPortfolio(
+      identity.id,
+      state,
+      updatedAt,
+      revision,
+    );
+    const response = json({ configured: true, saved: true, revision: nextRevision });
     if (identity.created) setPortfolioCookie(response, identity.id);
     return response;
-  } catch {
+  } catch (error) {
+    if (error instanceof PortfolioConflictError) {
+      return json({ configured: true, error: "Portfolio changed elsewhere." }, 409);
+    }
+    if (error instanceof PortfolioCapacityError) {
+      return json({ configured: true, error: "Portfolio storage is full." }, 507);
+    }
     return json({ configured: true, error: "Database unavailable." }, 503);
   }
 }
